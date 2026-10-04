@@ -111,7 +111,6 @@ function rewriteGasHtml(html) {
   out = out.replace(/const APP_URL\s*=\s*[^;\n,]+/g, 'const APP_URL = window.location.origin');
   out = out.replace(/let APP_URL\s*=\s*[^;\n,]+/g, 'let APP_URL = window.location.origin');
   out = out.replace(/var APP_URL\s*=\s*[^;\n,]+/g, 'var APP_URL = window.location.origin');
-  out = out.replace(/·G/g, '·R');
   out = out.replace(/window\.top\.location\.href/g, 'window.location.href');
   out = out.replace(/window\.parent\.location\.href/g, 'window.location.href');
   const shim = runnerShim();
