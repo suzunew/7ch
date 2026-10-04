@@ -9,7 +9,9 @@ function send(res, code, type, body) {
   res.writeHead(code, {
     'Content-Type': type,
     'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-    Pragma: 'no-cache'
+    Pragma: 'no-cache',
+    'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': "frame-ancestors 'none';"
   });
   res.end(body);
 }
@@ -27,6 +29,10 @@ async function parseJsonResponse(response) {
   try {
     return JSON.parse(text);
   } catch (error) {
+    const lower = text.toLowerCase();
+    if (response.status === 401 || response.status === 403 || lower.includes('sign in') || lower.includes('permission')) {
+      throw new Error('GAS Webアプリへ接続できません。GASのデプロイ設定で「ウェブアプリ」を選び、「実行するユーザー」は自分、「アクセスできるユーザー」は全員にして、再デプロイしてください。');
+    }
     throw new Error('GAS APIからJSONを取得できませんでした。HTTP ' + response.status + ' / ' + text.slice(0, 200));
   }
 }
@@ -242,7 +248,7 @@ function setStatus(text){document.getElementById('realtimeStatus').textContent=S
 function signature(value){return JSON.stringify(value,function(k,v){if(k==='dateText'||k==='updatedText')return v;return v})}
 function home(push=true){currentArchive=false;currentThreadId='';lastThreadSignature='';lastListSignature='';setDirectBack(false);showOther(true);if(push)history.replaceState({},'',location.pathname);loadHome(true)}
 function archive(push=true){currentArchive=true;currentThreadId='';lastThreadSignature='';setDirectBack(false);showOther(false);if(push)history.replaceState({},'',location.pathname+'?log=1');loadArchive(true)}
-function goOther(){window.location.href=OTHER_SERVICES_URL}
+function goOther(){window.open(OTHER_SERVICES_URL,'_blank','noopener,noreferrer')}
 function openLogin(){document.getElementById('loginModal').classList.add('show');document.getElementById('loginMsg').textContent=''}
 function closeLogin(){document.getElementById('loginModal').classList.remove('show')}
 function openCreate(){if(!adminSession){openLogin();document.getElementById('createMsg').textContent='スレッド作成には管理者ログインが必要です。';return}document.getElementById('createModal').classList.add('show');document.getElementById('createMsg').textContent=''}
@@ -337,7 +343,7 @@ function sendPost(){
   const name=document.getElementById('postName')?.value||'';const body=document.getElementById('postBody')?.value||'';const msg=document.getElementById('postMsg');const btn=document.getElementById('sendPostBtn');
   if(!body.trim()){msg.textContent='本文を入力してください。';return}
   btn.disabled=true;msg.textContent='送信中...';
-  apiPost('post',{threadId:currentThreadId,username:name,content:body,clientUserId:userId,adminSessionToken:adminSession,privatePassword:sessionStorage.getItem('sevench_r_private_'+currentThreadId)||''}).then(unwrap).then(result=>{
+  apiPost('post',{threadId:currentThreadId,username:name,content:body,clientUserId:userId,adminSessionToken:adminSession,privatePassword:sessionStorage.getItem('sevench_r_private_'+currentThreadId)||'',platform:'R'}).then(unwrap).then(result=>{
     document.getElementById('postBody').value='';msg.textContent='投稿しました。';lastThreadSignature='';fetchThread(true);
   }).catch(e=>{if(String(e.message).includes('PRIVATE')){sessionStorage.removeItem('sevench_r_private_'+currentThreadId);pendingPrivateThread=currentThreadId;pendingPrivateArchive=currentArchive;openPrivate()}msg.textContent=e.message}).finally(()=>{btn.disabled=false});
 }
