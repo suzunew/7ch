@@ -25,8 +25,8 @@ function patchArgsForClientIp(method, args, ip) {
   const a = Array.isArray(args) ? args.slice() : [];
   if (!ip) return a;
   if (method === 'getSiteAccessStatePublic') a[0] = ip;
-  if (method === 'createThread') a[2] = ip;
-  if (method === 'submitPost') a[4] = ip;
+  if (method === 'createThread') { a[2] = ip; a[9] = 'R'; }
+  if (method === 'submitPost') { a[4] = ip; a[8] = 'R'; }
   if (method === 'recordReferralInvite') a[2] = ip;
   return a;
 }
