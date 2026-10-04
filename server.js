@@ -69,11 +69,11 @@ async function rpc(req, res) {
   }
 }
 
-function runnerShim(publicBase) {
+function runnerShim() {
   return `<script>
 (function(){
   'use strict';
-  const RENDER_BASE = ${JSON.stringify(publicBase)};
+  const RENDER_BASE = window.location.origin;
   function makeRunner(state){
     const target = {
       withSuccessHandler: function(fn){ return makeRunner({success:typeof fn==='function'?fn:state.success,failure:state.failure,user:state.user}); },
@@ -99,29 +99,22 @@ function runnerShim(publicBase) {
 </script>`;
 }
 
-function rewriteGasHtml(html, publicBase) {
+function rewriteGasHtml(html) {
   let out = String(html || '');
   out = out.replace(/<base\b[^>]*>/gi, '');
   out = out.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
   out = out.replace(/<iframe\b[^>]*\/?>/gi, '');
   out = out.replace(/<script\b[^>]*src=["'][^"']*(?:googleusercontent|script\.google\.com|gstatic\.com)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
-  out = out.replace(/<script\b[^>]*src=["'][^"']*(?:googleusercontent|script\.google\.com|gstatic\.com)[^"']*["'][^>]*\/?>/gi, '');
-  out = out.replace(/<script\b[^>]*>[\s\S]*?goog\.[\s\S]*?<\/script>/gi, '');
   out = out.replace(/@import\s+url\(['"]https?:\/\/fonts\.googleapis\.com[^)]*\);?/gi, '');
-  out = out.replace(/https:\/\/api64\.ipify\.org\?format=json/g, publicBase + '/api/client-ip');
-  out = out.replace(/https:\/\/api\.ipify\.org\?format=json/g, publicBase + '/api/client-ip');
-  out = out.replace(/https:\/\/(?:api64|api)\.ipify\.org(?:\?[^'"`\s]*)?/g, publicBase + '/api/client-ip');
-  out = out.replace(/__RENDER_CLIENT_IP_ENDPOINT__/g, publicBase + '/api/client-ip');
-  const gasUrlPattern = String(GAS_API_URL).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  out = out.replace(new RegExp(gasUrlPattern, 'g'), publicBase);
-  out = out.replace(/https:\/\/script\.googleusercontent\.com\/[^'"`\s<>]+/g, publicBase);
-  out = out.replace(/const APP_URL\s*=\s*[^;\n,]+/g, 'const APP_URL = '+JSON.stringify(publicBase));
-  out = out.replace(/let APP_URL\s*=\s*[^;\n,]+/g, 'let APP_URL = '+JSON.stringify(publicBase));
-  out = out.replace(/var APP_URL\s*=\s*[^;\n,]+/g, 'var APP_URL = '+JSON.stringify(publicBase));
+  out = out.replace(/https:\/\/api64\.ipify\.org\?format=json/g, '/api/client-ip');
+  out = out.replace(/https:\/\/api\.ipify\.org\?format=json/g, '/api/client-ip');
+  out = out.replace(/const APP_URL\s*=\s*[^;\n,]+/g, 'const APP_URL = window.location.origin');
+  out = out.replace(/let APP_URL\s*=\s*[^;\n,]+/g, 'let APP_URL = window.location.origin');
+  out = out.replace(/var APP_URL\s*=\s*[^;\n,]+/g, 'var APP_URL = window.location.origin');
   out = out.replace(/·G/g, '·R');
   out = out.replace(/window\.top\.location\.href/g, 'window.location.href');
   out = out.replace(/window\.parent\.location\.href/g, 'window.location.href');
-  const shim = runnerShim(publicBase);
+  const shim = runnerShim();
   if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, m => m + shim);
   else out = shim + out;
   return out;
@@ -129,40 +122,19 @@ function rewriteGasHtml(html, publicBase) {
 
 async function page(req, res, parsed) {
   try {
-    const params = {};
-    for (const [key, value] of parsed.searchParams.entries()) {
-      params[key] = value;
-    }
-    delete params.raw;
-    delete params.render;
-    const response = await fetch(GAS_API_URL, {
-      method:'POST',
+    const target = new URL(GAS_API_URL);
+    target.search = parsed.search || '';
+    target.searchParams.set('raw', '1');
+    const response = await fetch(target, {
       headers:{
-        'Content-Type':'application/json; charset=utf-8',
-        'Accept':'application/json',
-        'User-Agent':'7ch-Render-Page/3.0'
+        'Accept':'text/html,text/plain;q=0.9,*/*;q=0.8',
+        'User-Agent':'7ch-Render/2.0'
       },
-      body:JSON.stringify({
-        key:GAS_API_KEY,
-        action:'getRenderPageHtml',
-        args:[{params}]
-      }),
       redirect:'follow'
     });
-    const text = await response.text();
-    if (!response.ok) return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS API接続エラー</h1><pre>'+escapeHtml(text.slice(0,4000))+'</pre>');
-    let payload;
-    try { payload = JSON.parse(text); } catch (e) {
-      return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS API応答エラー</h1><pre>'+escapeHtml(text.slice(0,4000))+'</pre>');
-    }
-    if (!payload || payload.ok === false || payload.success === false) {
-      return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS APIエラー</h1><pre>'+escapeHtml(JSON.stringify(payload || {}))+'</pre>');
-    }
-    let html = '';
-    if (payload.result && typeof payload.result === 'object' && typeof payload.result.html === 'string') html = payload.result.html;
-    else if (typeof payload.result === 'string') html = payload.result;
-    if (!html) return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>HTMLを取得できませんでした。</h1>');
-    const rewritten = rewriteGasHtml(html, `${parsed.protocol}//${parsed.host}`);
+    const html = await response.text();
+    if (!response.ok) return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS接続エラー</h1><pre>'+escapeHtml(html.slice(0,4000))+'</pre>');
+    const rewritten = rewriteGasHtml(html);
     const data = Buffer.from(rewritten, 'utf8');
     res.writeHead(200, {
       'Content-Type':'text/html; charset=utf-8',
@@ -171,11 +143,11 @@ async function page(req, res, parsed) {
       'Pragma':'no-cache',
       'Expires':'0',
       'X-Frame-Options':'DENY',
-      'Content-Security-Policy':"frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+      'Content-Security-Policy':"frame-ancestors 'none'"
     });
     return res.end(data);
   } catch (error) {
-    return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS API接続エラー</h1><p>'+escapeHtml(error && error.message ? error.message : error)+'</p>');
+    return send(res, 502, '<!doctype html><meta charset="utf-8"><h1>GAS接続エラー</h1><p>'+escapeHtml(error && error.message ? error.message : error)+'</p>');
   }
 }
 
